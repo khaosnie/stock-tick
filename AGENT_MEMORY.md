@@ -12,7 +12,7 @@
 | **名称** | stock-tick — A股/港股实时盘中监控仪表盘 |
 | **形态** | 纯前端单文件 HTML（~2300行），零后端 |
 | **入口** | `index.html` |
-| **线上 COS** | `https://stock-tick-1422784620.cos-website.ap-shanghai.myqcloud.com` |
+| **线上 GitHub Pages** | `https://khaosnie.github.io/stock-tick/` |
 
 ### 核心目标
 

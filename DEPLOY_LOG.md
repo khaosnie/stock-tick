@@ -73,10 +73,10 @@
 - **新函数**：`detectAccumulation()`, `detectConsecutiveBigOrders()`, `detectVolPriceDivergence()`
 - **CACHE_VERSION**：7 → 8
 
-### [2026-07-10] 迁移至腾讯云 COS
-- Netlify 额度用尽，迁移到腾讯云 COS 对象存储
-- COS 桶: `stock-tick-1422784620`，地域 `ap-shanghai`
-- 新增 `deploy.sh` 部署脚本
+### [2026-07-10] 迁移至 GitHub Pages（v8 最终部署）
+- COS 强制下载无法关闭（腾讯云安全策略），Vercel 国内被封
+- 最终方案：GitHub Pages `https://khaosnie.github.io/stock-tick/`
+- `./deploy.sh` 改为 `git push` 一键部署
 
 ### [2026-07-09] 修复：trends2 API 不再返回昨日数据 + 目录重命名
 - **取数问题**: `trends2/get` API 自2026.7起只返回当日数据 (`ndays=2/3/5` 均只有1天)
