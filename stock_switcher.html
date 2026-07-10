@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票监控仪表盘</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:20px}
+  h1{font-size:24px;color:#58a6ff}
+  .cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:24px 32px;text-align:center;cursor:pointer;transition:border-color .2s,transform .15s;min-width:180px}
+  .card:hover{border-color:#58a6ff;transform:translateY(-2px)}
+  .card .name{font-size:18px;font-weight:bold;margin-bottom:4px}
+  .card .code{font-size:13px;color:#8b949e}
+</style>
+</head>
+<body>
+  <h1>📊 股票监控仪表盘</h1>
+  <div class="cards">
+    <div class="card" onclick="location.href='dashboard_0700.html'">
+      <div class="name">腾讯控股</div>
+      <div class="code">0700.HK</div>
+    </div>
+    <div class="card" onclick="location.href='index.html'">
+      <div class="name">智谱</div>
+      <div class="code">02513.HK</div>
+    </div>
+  </div>
+</body>
+</html>
