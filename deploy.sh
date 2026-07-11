@@ -13,4 +13,5 @@ git push origin main
 
 echo ""
 echo "✅ 已推送，30秒 ~ 1分钟生效"
-echo "   https://stock-tick-b6k.pages.dev"
+echo "   GitHub:   https://khaosnie.github.io/stock-tick/"
+echo "   Cloudflare: https://stock-tick-b6k.pages.dev"
