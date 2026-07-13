@@ -639,7 +639,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 12;
+const CACHE_VERSION = 13;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -1067,41 +1067,87 @@ function calcKDJ(highs, lows, closes, n) {
   return kdj;
 }
 
-// ═══ 吸筹模式检测 ═══
+// ═══ 吸筹模式检测（v2：跨午休桥接 + 阶梯阈值） ═══
 function detectAccumulation(mins, curPrice) {
-  if (!mins || mins.length < 30) return null;
+  if (!mins || mins.length < 20) return null;
   var basePrice = curPrice;
   var range = basePrice * 0.015; // ±1.5%
 
-  // 从末尾往回找横盘区间
-  var endIdx = mins.length - 1;
-  var startIdx = endIdx;
-  for (var i = endIdx - 1; i >= 0; i--) {
-    if (Math.abs(mins[i].price - basePrice) > range) break;
-    startIdx = i;
-  }
-  var duration = endIdx - startIdx + 1;
-  if (duration < 30) return null; // 至少30分钟
+  // 确定午休时段（A股 11:30-13:00，港股 12:00-13:00）
+  var isHK = (CONFIG.secid || '').startsWith('116.');
+  var lunchStart = isHK ? '12:00' : '11:30';
+  var lunchEnd = '13:00';
 
-  // 检测间歇放量
+  function toMin(t) { var p = t.split(':'); return parseInt(p[0]) * 60 + parseInt(p[1]); }
+  function inRange(p) { return Math.abs(p - basePrice) <= range; }
+
+  var n = mins.length;
+  var segments = []; // [{startIdx, endIdx}] contiguous flat segments going backwards
+  var i = n - 1;
+
+  // 从末尾往回扫描，遇到午休空档自动桥接
+  while (i >= 0) {
+    if (!inRange(mins[i].price)) break;
+    var segEnd = i;
+    while (i >= 1 && inRange(mins[i-1].price)) i--;
+    // 记录这段 [i, segEnd]
+    if (segEnd >= i) segments.push({ start: i, end: segEnd });
+
+    // 检查前面是不是午休空档
+    if (i <= 0) break;
+    var curT = toMin(mins[i].time), prevT = toMin(mins[i-1].time);
+    var gap = curT - prevT;
+    // 正常间隔（1-10分钟），且前一根在范围内 → 继续
+    if (gap <= 10 && inRange(mins[i-1].price)) { i--; continue; }
+    // 大间隔，检查是否为午休
+    if (prevT >= toMin(lunchStart) - 5 && curT <= toMin(lunchEnd) + 5) {
+      // 可能是午休空档，检查午休前一根是否在范围内
+      if (inRange(mins[i-1].price)) { i--; continue; }
+    }
+    break;
+  }
+
+  if (segments.length === 0) return null;
+
+  // 合并 segments 计算总时长
+  var startIdx = segments[segments.length - 1].start;
+  var endIdx = segments[0].end;
+  var totalMin = 0;
+  for (var s = 0; s < segments.length; s++) {
+    totalMin += segments[s].end - segments[s].start + 1;
+  }
+
+  // 阶梯阈值
+  if (totalMin < 20) return null;
+  var level = totalMin >= 60 ? '>60m' : totalMin >= 30 ? '30m' : '20m';
+
+  // 计算间歇放量脉冲
   var totalVol = 0, spikeCount = 0;
-  for (var i = startIdx; i <= endIdx; i++) totalVol += mins[i].vol;
-  var avgVol = totalVol / duration;
-  for (var i = startIdx; i <= endIdx; i++) {
-    if (mins[i].vol > avgVol * 2) spikeCount++;
+  for (var s = 0; s < segments.length; s++) {
+    for (var j = segments[s].start; j <= segments[s].end; j++) {
+      totalVol += mins[j].vol;
+    }
+  }
+  var avgVol = totalVol / totalMin;
+  for (var s = 0; s < segments.length; s++) {
+    for (var j = segments[s].start; j <= segments[s].end; j++) {
+      if (mins[j].vol > avgVol * 2) spikeCount++;
+    }
   }
   if (spikeCount < 3) return null;
 
   // 检测净流入方向
   var upBars = 0, downBars = 0;
-  for (var i = startIdx + 1; i <= endIdx; i++) {
-    if (mins[i].price > mins[i-1].price) upBars++;
-    else if (mins[i].price < mins[i-1].price) downBars++;
+  for (var s = 0; s < segments.length; s++) {
+    for (var j = segments[s].start + 1; j <= segments[s].end; j++) {
+      if (mins[j].price > mins[j-1].price) upBars++;
+      else if (mins[j].price < mins[j-1].price) downBars++;
+    }
   }
   var direction = upBars > downBars ? '偏多' : (downBars > upBars ? '偏空' : '中性');
 
   var startTime = mins[startIdx].time, endTime = mins[endIdx].time;
-  return { startTime, endTime, duration, spikeCount, direction };
+  return { startTime, endTime, duration: totalMin, level: level, spikeCount: spikeCount, direction: direction };
 }
 
 // ═══ 连续同向大单检测 ═══
@@ -1593,8 +1639,10 @@ function analyze(q, trends, dailyBars) {
   // 吸筹模式
   var acc = detectAccumulation(mins, cur);
   if (acc) {
-    insights.unshift({icon:'🐋',title:'吸筹中 [' + acc.startTime + '-' + acc.endTime + ']',
-      desc:'横盘' + acc.duration + '分钟' + acc.direction + '，间歇放量×' + acc.spikeCount + '，疑似主力吸筹',type:'bull',conf:'low'});
+  var accLevel = acc.level, accConf = accLevel === '20m' ? 'low' : accLevel === '30m' ? 'med' : 'high';
+  var accTitle = '吸筹[' + accLevel + '级，' + acc.startTime + '-' + acc.endTime + ']';
+  insights.unshift({icon:'🐋',title:accTitle,
+    desc:'横盘' + acc.duration + '分钟' + acc.direction + '，间歇放量×' + acc.spikeCount + '，疑似主力吸筹',type:'bull',conf:accConf});
   }
   // 连续同向大单
   var big = detectConsecutiveBigOrders(mins);
