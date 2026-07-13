@@ -294,7 +294,7 @@ function buildDailyChartData(dailyBars) {
     var d = dailyBars[i];
     var ts = Math.floor(new Date(d.date + 'T00:00:00Z').getTime() / 1000);
     var o = parseFloat(d.open), h = parseFloat(d.high), l = parseFloat(d.low), c = parseFloat(d.close);
-    candles.push({ time: ts, open: o, high: h, low: l, close: c });
+    candles.push({ time: ts, open: o, high: h, low: l, close: c, volume: d.vol });
     volumes.push({ time: ts, value: d.vol, color: c >= o ? '#f8514944' : '#3fb95044' });
     closes.push(c);
   }
@@ -630,7 +630,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 10;
+const CACHE_VERSION = 11;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -1733,7 +1733,6 @@ function initChart() {
       if (dailyChartData.kdjDaily && idx < dailyChartData.kdjDaily.length) {
         var kd = dailyChartData.kdjDaily[idx];
         var jClr = kd.j < 0 ? 'var(--green)' : kd.j > 100 ? 'var(--red)' : '#c9d1d9';
-        html += '<div class="ch-row"><span class="ch-lbl">KDJ</span><span class="ch-val">K:' + kd.k.toFixed(0) + ' D:' + kd.d.toFixed(0) + '</span></div>';
         html += '<div class="ch-row"><span class="ch-lbl">J值</span><span class="ch-val" style="color:' + jClr + '">' + kd.j.toFixed(1) + (kd.j < 0 ? ' 超卖' : kd.j > 100 ? ' 超买' : '') + '</span></div>';
       }
 
