@@ -289,12 +289,11 @@ function getPriceScale(secid) {
 // ═══ 构建日K蜡烛图（从dailyBars） ═══
 function buildDailyChartData(dailyBars) {
   if (!dailyBars || dailyBars.length < 5) return null;
-  var PS = CONFIG.priceScale || 1000;
   var candles = [], volumes = [], closes = [];
   for (var i = 0; i < dailyBars.length; i++) {
     var d = dailyBars[i];
     var ts = Math.floor(new Date(d.date + 'T00:00:00Z').getTime() / 1000);
-    var o = d.open / PS, h = d.high / PS, l = d.low / PS, c = d.close / PS;
+    var o = parseFloat(d.open), h = parseFloat(d.high), l = parseFloat(d.low), c = parseFloat(d.close);
     candles.push({ time: ts, open: o, high: h, low: l, close: c });
     volumes.push({ time: ts, value: d.vol, color: c >= o ? '#f8514944' : '#3fb95044' });
     closes.push(c);
@@ -323,9 +322,8 @@ function buildDailyChartData(dailyBars) {
   }
 
   // ═══ KDJ 日线（用于 tooltip） ═══
-  var PS_daily = CONFIG.priceScale || 1000;
-  var dHighs = dailyBars.map(function(d){ return d.high / PS_daily; });
-  var dLows = dailyBars.map(function(d){ return d.low / PS_daily; });
+  var dHighs = dailyBars.map(function(d){ return parseFloat(d.high); });
+  var dLows = dailyBars.map(function(d){ return parseFloat(d.low); });
   var kdjDaily = calcKDJ(dHighs, dLows, closes, 9);
 
   // ═══ RSI(14) ═══
@@ -632,7 +630,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 9;
+const CACHE_VERSION = 10;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
