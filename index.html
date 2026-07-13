@@ -639,7 +639,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 13;
+const CACHE_VERSION = 14;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -1955,11 +1955,12 @@ function buildSignalLog(r) {
   var entries = [];
   var PREV_CLOSE = CONFIG.prevClose || 1;
 
-  // 1. 分钟级信号（detectMinuteSignals）
+  // 1. 分钟级信号（取信号发生时刻的真实分钟数据）
   for (var i = 0; i < r.mins.length; i++) {
     var tags = detectMinuteSignals(r, i);
     for (var t = 0; t < tags.length; t++) {
-      entries.push({ time: r.mins[i].time, icon: '📍', signal: tags[t].label, explain: getSignalExplain(tags[t].label, r.mins[i], i, r), conf: '' });
+      var explain = buildMinuteExplain(tags[t].label, tags[t].cls, r, i);
+      entries.push({ time: r.mins[i].time, icon: '📍', signal: tags[t].label, explain: explain, conf: '' });
     }
   }
 
@@ -1967,35 +1968,30 @@ function buildSignalLog(r) {
   if (r.sigs && r.sigs.length) {
     for (var si = 0; si < r.sigs.length; si++) {
       var s = r.sigs[si];
-      var explain = getSigExplain(s.text, s.sub, r);
-      // 只加值得关注的
-      if (explain) entries.push({ time: getLatestTime(r.mins), icon: s.icon, signal: s.text, explain: explain, conf: '' });
+      var explain = buildSigExplain(s.text, s.sub, s.icon, r);
+      if (explain) entries.push({ time: getLatestTime(r.mins), icon: s.icon, signal: s.text, explain: explain, conf: s.conf || '' });
     }
   }
 
-  // 3. 关键洞察中高价值信号
+  // 3. 洞察信号
   if (r.insights && r.insights.length) {
     for (var ii = 0; ii < r.insights.length; ii++) {
       var ins = r.insights[ii];
-      var confTag = ins.conf === 'low' ? ' ⚪仅供参考' : ins.conf === 'high' ? ' 🔴' : '';
-      var explain = ins.desc || '';
-      var skipTypes = { '盘面综述':1, 'VWAP上方强势':1, '站稳VWAP':1, 'VWAP下方承压':1, 'VWAP压制':1 };
+      var confTag = ins.conf === 'low' ? ' ⚪仅供参考' : ins.conf === 'high' ? ' 🔴高置信' : '';
+      var skipTypes = { '盘面综述':1, 'VWAP上方强势(日内)':1, '站稳VWAP(日内)':1, 'VWAP下方承压(日内)':1, 'VWAP压制(日内)':1 };
       if (skipTypes[ins.title]) continue;
-      entries.push({ time: getLatestTime(r.mins), icon: ins.icon, signal: ins.title, explain: explain, conf: confTag });
+      var explain = ins.desc || '';
+      // 吸筹信号从title解析时间
+      var accMatch = ins.title.match(/吸筹\[.+?，(\d+:\d+)-(\d+:\d+)\]/);
+      var entryTime = accMatch ? accMatch[1] : getLatestTime(r.mins);
+      entries.push({ time: entryTime, icon: ins.icon, signal: ins.title, explain: explain, conf: confTag });
     }
   }
 
   // 4. 按时间倒序
   entries.sort(function(a, b) { return (b.time || '').localeCompare(a.time || ''); });
 
-  // 5. 去重（同一分钟内同信号只保留一条）
-  var seen = {}, unique = [];
-  for (var e = 0; e < entries.length; e++) {
-    var k = entries[e].time + '|' + entries[e].signal;
-    if (!seen[k]) { seen[k] = 1; unique.push(entries[e]); }
-  }
-
-  return unique.slice(0, 10);
+  return entries.slice(0, 10);
 }
 
 function getLatestTime(mins) {
@@ -2003,42 +1999,105 @@ function getLatestTime(mins) {
   return mins[mins.length - 1].time;
 }
 
-function getSignalExplain(label, m, idx, r) {
+// ═══ 分钟级信号解释（含实际值 vs 门限） ═══
+function buildMinuteExplain(label, cls, r, idx) {
+  var m = r.mins[idx];
+  var prev = idx > 0 ? r.mins[idx-1] : null;
   var PREV_CLOSE = CONFIG.prevClose || 1;
-  var exp = {
-    '脉冲拉升': '价格' + (m.price||0).toFixed(0) + '，分钟涨幅显著，疑似主力推动',
-    '脉冲下砸': '价格' + (m.price||0).toFixed(0) + '，分钟跌幅显著，主力出货信号',
-    '急拉': '短时快速拉升，关注是否带量及后续回吐',
-    '急跌': '快速下跌释放抛压，关注止跌信号',
-    '上穿VWAP': '价格突破日内均价VWAP，买方开始主导',
-    '下穿VWAP': '价格跌破日内均价VWAP，卖方压力增大',
-    '突破': '突破关键价位，可能是趋势加速信号',
-    '日内新高': '创当日新高，多头占优',
-    '日内新低': '创当日新低，空头占优',
-    '破昨收': '跌破昨日收盘价' + PREV_CLOSE.toFixed(0) + '，弱势确认',
-    '收复昨收': '收复昨日收盘价' + PREV_CLOSE.toFixed(0) + '，转强信号',
-    '下砸': '盘中下砸，关注量价配合，可能为主力震仓',
-    '上攻': '盘中上攻，关注量能是否持续配合',
-    '缩量': '成交量锐减，惜售或交投清淡',
-    '诱多': '价格急拉后回落，疑为诱多出货',
-    '放量': '成交量放大，多空分歧加剧'
-  };
-  for (var key in exp) {
-    if (label.indexOf(key) >= 0) return exp[key];
+  var p = m.price || 0, v = m.vol || 0, pv = prev ? prev.price : p;
+  var chg = prev ? ((p - pv) / pv * 100) : 0;
+
+  // 量比计算
+  var histVols = r.mins.slice(Math.max(0, idx-8), idx).map(function(x){return x.vol;});
+  var avgVol = histVols.length ? histVols.reduce(function(a,b){return a+b;},0) / histVols.length : v;
+  var volRatio = avgVol > 0 ? (v / avgVol).toFixed(1) : '?';
+
+  if (label.indexOf('脉冲拉升') === 0) {
+    return '[量比:' + volRatio + '×(≥2.5倍门限)|涨幅:' + chg.toFixed(1) + '%(≥2%门限)|价:' + p.toFixed(0) + ']→单分钟放量急涨，主力主动买入概率高';
   }
-  return '分钟级信号，具体逻辑见分时脉搏';
+  if (label.indexOf('脉冲下砸') === 0) {
+    return '[量比:' + volRatio + '×(≥2.5倍门限)|跌幅:' + Math.abs(chg).toFixed(1) + '%(≥2%门限)|价:' + p.toFixed(0) + ']→单分钟放量急跌，主力主动卖出概率高';
+  }
+  if (label.indexOf('爆量') === 0 || label.indexOf('放量') === 0) {
+    var th = label.indexOf('爆量') === 0 ? '≥3倍' : '≥2倍';
+    return '[量比:' + volRatio + '×(' + th + '门限)' + (chg ? '|涨跌:' + (chg>=0?'+':'') + chg.toFixed(1) + '%' : '') + ']→放量异动，多空分歧加剧';
+  }
+  if (label.indexOf('尾盘') === 0) {
+    return '[尾盘14:40后|量比:' + volRatio + '×(≥2倍门限)|涨跌:' + (chg>=0?'+':'') + chg.toFixed(2) + '%]→尾盘放量操作，机构调仓信号';
+  }
+  if (label.indexOf('急拉') === 0 || label.indexOf('拉升') === 0) {
+    return '[涨幅:' + (parseFloat(label.match(/[\d.]+/)?.[0]||0)).toFixed(1) + '%(≥1.5%门限)|量比:' + volRatio + '×]→快速拉升，关注后续是否带量及回吐';
+  }
+  if (label.indexOf('急跌') === 0 || label.indexOf('下砸') === 0) {
+    return '[跌幅:' + (parseFloat(label.match(/[\d.]+/)?.[0]||0)).toFixed(1) + '%(≥1.5%门限)|量比:' + volRatio + '×]→快速下砸，关注是否缩量止跌';
+  }
+  if (label.indexOf('缩量止跌') === 0) {
+    var pv2 = idx > 1 ? r.mins[idx-2] : null;
+    return '[连续缩量:' + (r.mins[idx-1]?r.mins[idx-1].vol:0) + '→' + v + '|跌速放缓]→抛压衰竭，若持续缩量+止跌，反弹概率提升';
+  }
+  if (label.indexOf('诱多') === 0) {
+    var prev2 = idx > 1 ? r.mins[idx-2] : null;
+    var pp = prev2 ? prev2.price : pv;
+    return '[前分钟涨≥1.5%→当前跌≥1%|价:' + p.toFixed(0) + '|量:' + (v/1e4).toFixed(1) + '万]→拉升后快速回吐，疑似主力出货';
+  }
+  if (label.indexOf('VWAP') >= 0) {
+    return '[穿越VWAP:' + (r.vwap||0).toFixed(0) + '|价:' + p.toFixed(0) + ']→日内均价关键位，突破后方向确认概率高';
+  }
+  if (label.indexOf('突破') === 0 || label.indexOf('跌破') === 0) {
+    return '[关键价位穿越:' + label + ']→支撑/压力位突破，方向性信号';
+  }
+  if (label.indexOf('日内新高') === 0) {
+    return '[价:' + p.toFixed(0) + '|超越当日所有前高价]→创日内新高，多头动能充沛';
+  }
+  if (label.indexOf('日内新低') === 0) {
+    return '[价:' + p.toFixed(0) + '|跌破当日所有前低价]→创日内新低，空头压力未消';
+  }
+  if (label.indexOf('V反') === 0) {
+    return '[形态:低→次低→高|涨:' + (chg>=0?'+':'') + chg.toFixed(1) + '%]→V型反转形态，若带量确认则反转概率高';
+  }
+  if (label.indexOf('3连阳') === 0) {
+    return '[连续3根阳线|量:近3分钟' + (v/1e4).toFixed(1) + '万]→短线多头连贯，关注是否放量加速';
+  }
+  if (label.indexOf('3连阴') === 0) {
+    return '[连续3根阴线|量:近3分钟' + (v/1e4).toFixed(1) + '万]→短线空头连贯，关注是否缩量止跌';
+  }
+  if (label.indexOf('破昨收') === 0) {
+    return '[价:' + p.toFixed(0) + '|昨收:' + PREV_CLOSE.toFixed(0) + ']→跌破昨收，日内由多转空信号';
+  }
+  if (label.indexOf('收复昨收') === 0) {
+    return '[价:' + p.toFixed(0) + '|昨收:' + PREV_CLOSE.toFixed(0) + ']→收复昨收，日内由空转多信号';
+  }
+  return '[价:' + p.toFixed(0) + '|量:' + (v/1e4).toFixed(1) + '万]→分钟级信号';
 }
 
-function getSigExplain(text, sub, r) {
-  var exp = {
-    '放量异动': '成交量异常放大，近5分钟均值' + ((r.mins||[]).length>0?(r.mins[r.mins.length-1].vol||0).toFixed(0):'--') + '手，资金博弈激烈',
-    '诱多陷阱': '急拉后价格快速回吐，疑似主力拉升出货',
-    '严重超跌': '距昨收跌超7%，恐慌抛售后的超跌反弹概率提升',
-    '超跌预警': '距昨收跌超5%，短期跌幅较大关注止跌信号',
-    '反弹质量': sub || '关注反弹力度与量能配合',
-    '缩量止跌': '连续缩量下跌，抛压衰竭信号，关注方向选择'
-  };
-  return exp[text] || sub || null;
+// ═══ 实时信号解释（含门限对比） ═══
+function buildSigExplain(text, sub, icon, r) {
+  var cur = (r.mins || []).length ? r.mins[r.mins.length - 1].price : 0;
+  var PREV_CLOSE = CONFIG.prevClose || 1;
+
+  if (text.indexOf('放量异动') === 0) {
+    var m = r.mins[r.mins.length - 1];
+    var histVols = r.mins.slice(Math.max(0, r.mins.length - 9), r.mins.length - 1).map(function(x){return x.vol;});
+    var avg5 = histVols.length ? histVols.reduce(function(a,b){return a+b;},0) / histVols.length : 1;
+    var ratio = avg5 > 0 ? (m.vol / avg5).toFixed(1) : '?';
+    return '[量:' + (m.vol/1e4).toFixed(1) + '万|5分均量:' + (avg5/1e4).toFixed(1) + '万|倍率:' + ratio + '×(≥2倍门限)]→成交量显著异常，资金激烈博弈';
+  }
+  if (text.indexOf('诱多') === 0) {
+    return '[判定:急拉后快速回吐]→价格冲高回落速度快，疑似主力拉升出货，警惕追高';
+  }
+  if (text.indexOf('严重超跌') === 0) {
+    return '[价:' + cur.toFixed(0) + '|昨收:' + PREV_CLOSE.toFixed(0) + '|跌幅:≥7%]→恐慌性抛售后的超跌反弹概率上升，但抄底需等止跌信号';
+  }
+  if (text.indexOf('超跌预警') === 0) {
+    return '[价:' + cur.toFixed(0) + '|昨收:' + PREV_CLOSE.toFixed(0) + '|跌幅:≥5%]→短期跌幅较大，卖压释放充分，关注是否有止跌反弹信号';
+  }
+  if (text.indexOf('反弹质量') === 0) {
+    return sub ? ('[评分依据:' + sub + ']→A=量价配合佳,B=量弱涨幅尚可,C=缩量弱反弹') : '[关注反弹力度与量能配合]→量能不足的反弹易夭折';
+  }
+  if (text.indexOf('缩量止跌') === 0) {
+    return '[判定:连续缩量下跌]→抛压衰竭信号，若持续缩量且价格企稳，反弹概率提升';
+  }
+  return sub || null;
 }
 
 // ═══ UI更新 ═══
