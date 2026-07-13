@@ -189,7 +189,7 @@
   <span class="stat">开 <span id="openP">--</span></span>
   <span class="stat">高 <span id="highP">--</span></span>
   <span class="stat">低 <span id="lowP">--</span></span>
-  <span class="stat">昨收 <span id="prevCloseTxt">1793</span></span>
+  <span class="stat">昨收 <span id="prevCloseTxt">--</span></span>
   <span class="stat">量 <span id="vol">--</span>万手</span>
   <span class="stat">额 <span id="amt">--</span>亿</span>
   <span class="badge gray" id="badge">--</span>
@@ -259,7 +259,7 @@ let CONFIG = {
   code: '02513',
   name: '智谱',
   secid: '116.02513',
-  prevClose: 1793,
+  prevClose: 0,
   market: '港股',
   isTrading: false,
   priceScale: 1000,
@@ -632,7 +632,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 8;
+const CACHE_VERSION = 9;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -823,19 +823,17 @@ async function switchStock(secid, code, name, market, prevClose) {
 
   // 更新 CONFIG
   var ps = getPriceScale(secid);
+  // 始终从 API 获取 prevClose，不使用硬编码值
+  try {
+    var pr = await fetch(API_BASE + '/stock/get?secid=' + secid + '&fields=f43,f60').then(function(r){return r.json();});
+    if (pr && pr.data) {
+      var apiClose = pr.data.f60 ? pr.data.f60 / ps : (pr.data.f43 / ps);
+      if (apiClose > 0) prevClose = apiClose;
+    }
+  } catch(e) { console.log('prevClose fetch err:', e); }
+  // 兜底
+  if (!prevClose || prevClose <= 0) prevClose = 1;
   CONFIG = { secid, code, name, market, prevClose, isTrading: true, priceScale: ps, defaultSR: [] };
-
-  // 如果 prevClose 未知，从 API 获取
-  if (!prevClose || prevClose <= 0) {
-    try {
-      var pr = await fetch(API_BASE + '/stock/get?secid=' + secid + '&fields=f43,f60').then(function(r){return r.json();});
-      if (pr && pr.data) {
-        CONFIG.prevClose = pr.data.f60 ? pr.data.f60 / ps : (pr.data.f43 / ps);
-      }
-    } catch(e) { console.log('prevClose fetch err:', e); }
-  }
-  // 兜底：如果 prevClose 仍为0，用当前价
-  if (!CONFIG.prevClose || CONFIG.prevClose <= 0) CONFIG.prevClose = 1;
 
   // 更新 UI 头部
   document.querySelector('.topbar .code').textContent = code + ' ' + name;
@@ -2336,7 +2334,7 @@ async function refresh() {
 }
 
 // ═══ 启动 ═══
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   computeTodayUTC();
 
   const ts = document.getElementById('tradeStatus');
@@ -2353,6 +2351,8 @@ window.addEventListener('DOMContentLoaded', () => {
   renderAlerts(loadAlerts());
 
   if (initChart()) {
+    // prevClose 始终从 API 获取，不使用硬编码值
+    await switchStock(CONFIG.secid, CONFIG.code, CONFIG.name, CONFIG.market, 0);
     cachedData = loadCache();
     if (cachedData) {
       updateUI(cachedData);
