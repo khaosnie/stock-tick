@@ -639,7 +639,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 14;
+const CACHE_VERSION = 15;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -1981,9 +1981,11 @@ function buildSignalLog(r) {
       var skipTypes = { '盘面综述':1, 'VWAP上方强势(日内)':1, '站稳VWAP(日内)':1, 'VWAP下方承压(日内)':1, 'VWAP压制(日内)':1 };
       if (skipTypes[ins.title]) continue;
       var explain = ins.desc || '';
-      // 吸筹信号从title解析时间
-      var accMatch = ins.title.match(/吸筹\[.+?，(\d+:\d+)-(\d+:\d+)\]/);
-      var entryTime = accMatch ? accMatch[1] : getLatestTime(r.mins);
+      // 尝试从desc/title中提取真实时间
+      var entryTime = getLatestTime(r.mins);
+      var timeMatch = (ins.desc || '').match(/(\d{2}:\d{2})/);
+      if (!timeMatch && ins.title.indexOf('吸筹') >= 0) timeMatch = ins.title.match(/(\d{2}:\d{2})/);
+      if (timeMatch) entryTime = timeMatch[1];
       entries.push({ time: entryTime, icon: ins.icon, signal: ins.title, explain: explain, conf: confTag });
     }
   }
