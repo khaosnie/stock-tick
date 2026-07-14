@@ -639,7 +639,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 15;
+const CACHE_VERSION = 16;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -2294,9 +2294,6 @@ function updateUI(r) {
     priceLines.push(candleSeries.createPriceLine({ price: PREV_CLOSE, color: '#58a6ff', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '昨收' }));
     priceLines.push(candleSeries.createPriceLine({ price: r.open, color: '#8b949e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '今开' }));
 
-    // 渲染洞察栏（分时）
-    renderInsightBar(r.insights, r.sigs);
-
     } else if (chartMode === '5min') {
     // ═══ 5分钟K线模式 ═══
     if (yesterdayCandleSeries) yesterdayCandleSeries.setData([]);
@@ -2579,15 +2576,8 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (initChart()) {
     // prevClose 始终从 API 获取，不使用硬编码值
+    // switchStock 内部已完成：加载缓存 + refresh + 建立定时器
     await switchStock(CONFIG.secid, CONFIG.code, CONFIG.name, CONFIG.market, 0);
-    cachedData = loadCache();
-    if (cachedData) {
-      updateUI(cachedData);
-      document.getElementById('cacheInfo').textContent = '（缓存）';
-    }
-    refresh();
-    if (CONFIG.isTrading) updateTimer = setInterval(refresh, 5 * 60 * 1000);
-    alertCheckTimer = setInterval(() => { if (cachedData) checkAlerts(cachedData.cur); }, 30000);
   }
 });
 
