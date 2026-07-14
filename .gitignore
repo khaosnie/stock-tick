@@ -6,3 +6,10 @@ DEPLOY_LOG.md
 scf-index.js
 /tmp
 local/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
