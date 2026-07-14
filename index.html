@@ -639,7 +639,7 @@ let dailyChartData = null;
 let fiveMinChartData = null;  // 预计算的日K蜡烛+指标
 
 // ═══ 辅助 ═══
-const CACHE_VERSION = 16;
+const CACHE_VERSION = 17;
 function cacheKey() { return 'sd_cache_v' + CACHE_VERSION + '_' + CONFIG.code; }
 function alertKey() { return 'sd_alerts_' + CONFIG.code; }
 
@@ -1993,7 +1993,7 @@ function buildSignalLog(r) {
   // 4. 按时间倒序
   entries.sort(function(a, b) { return (b.time || '').localeCompare(a.time || ''); });
 
-  return entries.slice(0, 10);
+  return entries;
 }
 
 function getLatestTime(mins) {
